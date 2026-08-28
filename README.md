@@ -1,5 +1,27 @@
 ![quiche](quiche.svg)
 
+The moq fork
+------------
+
+This is [moq-dev](https://github.com/moq-dev)'s fork of
+[cloudflare/quiche](https://github.com/cloudflare/quiche). It carries the
+media-aware transport features [moq-dev/moq](https://github.com/moq-dev/moq)
+needs and upstream does not want to maintain (a rustls crypto backend,
+per-stream delivery telemetry, congestion control tuned for real-time media).
+
+- `moq` is the default branch: the latest upstream release tag plus our
+  patches. `master` mirrors upstream master untouched.
+- The fork stays API-compatible with upstream: new capability is additive
+  (new methods, new feature flags), never a changed signature. Consumers pick
+  it up via `[patch.crates-io]`, so a crate built against crates-io quiche
+  builds against the fork unchanged.
+- Rebase per upstream release, not continuously: a new upstream release
+  triggers one rebase PR that moves `moq` onto the new tag.
+- Upstreaming is opportunistic: a feature that comes out clean is offered to
+  cloudflare/quiche, but nothing here waits on their review.
+
+The upstream README follows.
+
 [![crates.io](https://img.shields.io/crates/v/quiche.svg)](https://crates.io/crates/quiche)
 [![docs.rs](https://docs.rs/quiche/badge.svg)](https://docs.rs/quiche)
 [![license](https://img.shields.io/github/license/cloudflare/quiche.svg)](https://opensource.org/licenses/BSD-2-Clause)
