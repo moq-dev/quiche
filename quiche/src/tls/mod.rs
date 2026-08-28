@@ -31,6 +31,19 @@
 //! backends expose the same `Context`/`Handshake`/`ExData` interface to the
 //! rest of the crate.
 
+#[cfg(all(feature = "__rustls", feature = "boringssl-boring-crate"))]
+compile_error!(
+    "the rustls backend replaces BoringSSL: enable rustls-aws-lc-rs or \
+     rustls-ring only with default-features = false. If another crate in the \
+     dependency graph enables quiche's default features, cargo's feature \
+     unification would otherwise silently decide the backend."
+);
+
+#[cfg(all(feature = "__rustls", feature = "ffi"))]
+compile_error!(
+    "the FFI layer binds BoringSSL types and requires the default backend"
+);
+
 #[cfg(not(feature = "__rustls"))]
 mod boringssl;
 #[cfg(not(feature = "__rustls"))]

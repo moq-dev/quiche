@@ -55,7 +55,12 @@ jobs:
       #   run: cargo package --verbose --workspace --exclude=quiche_apps --allow-dirty
 
       - name: Run cargo doc
-        run: cargo doc --no-deps --all-features --document-private-items
+        run: cargo doc --no-deps --features async,ffi,qlog,internal,gcongestion,custom-client-dcid --document-private-items
+
+      # The rustls backend is feature-exclusive with BoringSSL (see
+      # src/tls/mod.rs), so --all-features cannot build; document it separately.
+      - name: Run cargo doc (rustls)
+        run: cargo doc --no-deps --no-default-features --features rustls-aws-lc-rs,qlog,internal -p quiche --document-private-items
 
       - name: Build C examples
         run: |

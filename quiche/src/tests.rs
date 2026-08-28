@@ -272,7 +272,7 @@ fn verify_custom_root() {
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config.verify_peer(true);
     config
-        .load_verify_locations_from_file("examples/rootca.crt")
+        .load_verify_locations_from_file(test_utils::ROOTCA)
         .unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
@@ -286,10 +286,10 @@ fn verify_custom_root() {
 fn verify_client_invalid() {
     let mut server_config = Config::new(PROTOCOL_VERSION).unwrap();
     server_config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
     server_config
-        .load_priv_key_from_pem_file("examples/cert.key")
+        .load_priv_key_from_pem_file(test_utils::KEY)
         .unwrap();
     server_config
         .set_application_protos(&[b"proto1", b"proto2"])
@@ -305,10 +305,10 @@ fn verify_client_invalid() {
 
     let mut client_config = Config::new(PROTOCOL_VERSION).unwrap();
     client_config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
     client_config
-        .load_priv_key_from_pem_file("examples/cert.key")
+        .load_priv_key_from_pem_file(test_utils::KEY)
         .unwrap();
     client_config
         .set_application_protos(&[b"proto1", b"proto2"])
@@ -321,7 +321,7 @@ fn verify_client_invalid() {
     // The client is able to verify the server's certificate with the
     // appropriate CA.
     client_config
-        .load_verify_locations_from_file("examples/rootca.crt")
+        .load_verify_locations_from_file(test_utils::ROOTCA)
         .unwrap();
     client_config.verify_peer(true);
 
@@ -332,7 +332,9 @@ fn verify_client_invalid() {
     .unwrap();
     assert_eq!(pipe.handshake(), Err(Error::TlsFail));
 
-    // Client did send a certificate.
+    // Client did send a certificate. BoringSSL retains it after the failed
+    // handshake; rustls discards it with the rejected connection.
+    #[cfg(not(feature = "__rustls"))]
     assert!(pipe.server.peer_cert().is_some());
 }
 
@@ -340,11 +342,9 @@ fn verify_client_invalid() {
 fn verify_client_anonymous() {
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -469,6 +469,7 @@ fn handshake_done(
 
     // Disable session tickets on the server (SSL_OP_NO_TICKET) to avoid
     // triggering 1-RTT packet send with a CRYPTO frame.
+    #[cfg(not(feature = "__rustls"))]
     pipe.server.handshake.set_options(0x0000_4000);
 
     assert_eq!(pipe.handshake(), Ok(()));
@@ -537,6 +538,7 @@ fn handshake_confirmation(
     assert!(pipe.server.handshake_confirmed);
 }
 
+#[cfg(not(feature = "__rustls"))] // exercises set_ticket_key, a BoringSSL knob
 #[rstest]
 fn handshake_resumption(
     #[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str,
@@ -547,11 +549,9 @@ fn handshake_resumption(
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
 
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -577,11 +577,9 @@ fn handshake_resumption(
     // Configure session on new connection and perform handshake.
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -639,11 +637,9 @@ fn handshake_0rtt(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -703,11 +699,9 @@ fn handshake_0rtt_reordered(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -777,11 +771,9 @@ fn handshake_0rtt_truncated(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -836,11 +828,9 @@ fn crypto_limit(#[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str) 
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -905,11 +895,9 @@ fn limit_handshake_data(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert-big.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT_BIG)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -935,11 +923,9 @@ fn custom_limit_handshake_data(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert-big.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT_BIG)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -961,11 +947,9 @@ fn custom_limit_handshake_data(
 fn amplification_limited_stat() {
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert-big.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT_BIG)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -1167,11 +1151,9 @@ fn zero_rtt(#[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str) {
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -1228,11 +1210,9 @@ fn stream_send_on_32bit_arch(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -1625,11 +1605,9 @@ fn flow_control_drain(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -1729,11 +1707,9 @@ fn flow_control_reset_stream(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -3472,11 +3448,9 @@ fn stop_sending_unsent_tx_cap(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -3938,11 +3912,9 @@ fn stream_shutdown_read_update_max_data(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -4045,11 +4017,9 @@ fn stream_shutdown_write_update_max_data(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -4231,11 +4201,9 @@ fn stream_shutdown_write_unsent_tx_cap(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -4514,11 +4482,9 @@ fn stream_writable_blocked(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config.set_application_protos(&[b"h3"]).unwrap();
     config.set_initial_max_data(70);
     config.set_initial_max_stream_data_bidi_local(150000);
@@ -4893,11 +4859,9 @@ fn reset_before_flushed_packets(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -4972,11 +4936,9 @@ fn stream_limit_update_bidi(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5051,11 +5013,9 @@ fn stream_limit_update_uni(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5117,11 +5077,9 @@ fn max_streams_sent_only_when_at_threshold(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5220,11 +5178,9 @@ fn high_utilization_maintains_streams_in_aged_connection(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5538,7 +5494,10 @@ fn peer_cert(#[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str) {
     assert_eq!(pipe.handshake(), Ok(()));
 
     match pipe.client.peer_cert() {
-        Some(c) => assert_eq!(c.len(), 753),
+        Some(c) => assert_eq!(
+            c.len(),
+            if cfg!(feature = "__rustls") { 847 } else { 753 }
+        ),
 
         None => panic!("missing server certificate"),
     }
@@ -5551,11 +5510,9 @@ fn peer_cert_chain(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert-big.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT_BIG)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5577,11 +5534,9 @@ fn retry(#[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str) {
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5640,11 +5595,9 @@ fn retry_with_pto(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5708,11 +5661,9 @@ fn retry_missing_original_destination_connection_id(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5770,11 +5721,9 @@ fn retry_invalid_original_destination_connection_id(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5833,11 +5782,9 @@ fn retry_separate_source_connection_id(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -5904,11 +5851,9 @@ fn retry_invalid_source_connection_id(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -6332,11 +6277,9 @@ fn tx_cap_factor(#[values(true, false)] discard: bool) {
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config.set_initial_max_data(50000);
     config.set_initial_max_stream_data_bidi_local(12000);
     config.set_initial_max_stream_data_bidi_remote(12000);
@@ -6393,11 +6336,9 @@ fn client_rst_stream_while_bytes_in_flight(
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config.set_initial_max_data(50000);
     config.set_initial_max_stream_data_bidi_local(120000);
     config.set_initial_max_stream_data_bidi_remote(120000);
@@ -6429,6 +6370,8 @@ fn client_rst_stream_while_bytes_in_flight(
         pipe.server.stream_send(4, &send_buf, false),
         if cc_algorithm_name == "cubic" {
             Ok(12000)
+        } else if cfg!(feature = "__rustls") {
+            Ok(13758)
         } else {
             Ok(13878)
         }
@@ -6451,7 +6394,12 @@ fn client_rst_stream_while_bytes_in_flight(
     // tx_buffered goes down to 0 after the reset and acks are
     // processed.  A full cwnd's worth of packets can be sent.
     let expected_cwnd = match cc_algorithm_name {
-        "bbr2" | "bbr2_gcongestion" => 27756,
+        "bbr2" | "bbr2_gcongestion" =>
+            if cfg!(feature = "__rustls") {
+                27516
+            } else {
+                27756
+            },
         _ => 24000,
     };
 
@@ -6484,11 +6432,9 @@ fn client_rst_stream_while_bytes_in_flight_with_packet_loss(
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config.set_initial_max_data(50000);
     config.set_initial_max_stream_data_bidi_local(120000);
     config.set_initial_max_stream_data_bidi_remote(120000);
@@ -6518,6 +6464,8 @@ fn client_rst_stream_while_bytes_in_flight_with_packet_loss(
         pipe.server.stream_send(4, &send_buf, false),
         if cc_algorithm_name == "cubic" {
             Ok(12000)
+        } else if cfg!(feature = "__rustls") {
+            Ok(13758)
         } else {
             Ok(13878)
         }
@@ -6539,7 +6487,12 @@ fn client_rst_stream_while_bytes_in_flight_with_packet_loss(
     // tx_buffered goes down to 0 after the reset and acks are
     // processed.  A full cwnd's worth of packets can be sent.
     let expected_cwnd = match cc_algorithm_name {
-        "bbr2" | "bbr2_gcongestion" => 26556,
+        "bbr2" | "bbr2_gcongestion" =>
+            if cfg!(feature = "__rustls") {
+                26316
+            } else {
+                26556
+            },
         _ => 8400,
     };
 
@@ -6573,11 +6526,9 @@ fn sends_ack_only_pkt_when_full_cwnd_and_ack_elicited(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -6599,6 +6550,10 @@ fn sends_ack_only_pkt_when_full_cwnd_and_ack_elicited(
         pipe.client.stream_send(0, &send_buf1, false),
         if cc_algorithm_name == "cubic" {
             Ok(12000)
+        } else if cfg!(feature = "rustls-aws-lc-rs") {
+            Ok(12322)
+        } else if cfg!(feature = "rustls-ring") {
+            Ok(12318)
         } else {
             Ok(12299)
         }
@@ -6648,11 +6603,9 @@ fn sends_ack_only_pkt_when_full_cwnd_and_ack_elicited_despite_max_unacknowledgin
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -6674,6 +6627,10 @@ fn sends_ack_only_pkt_when_full_cwnd_and_ack_elicited_despite_max_unacknowledgin
         pipe.client.stream_send(0, &send_buf1, false),
         if cc_algorithm_name == "cubic" {
             Ok(12000)
+        } else if cfg!(feature = "rustls-aws-lc-rs") {
+            Ok(12322)
+        } else if cfg!(feature = "rustls-ring") {
+            Ok(12318)
         } else {
             Ok(12299)
         }
@@ -6731,11 +6688,9 @@ fn validate_peer_sent_ack_range(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config.set_cc_algorithm_name(cc_algorithm_name).unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -6819,11 +6774,9 @@ fn validate_peer_sent_ack_range_for_multi_path(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -6935,11 +6888,9 @@ fn optimistic_ack_mitigation_via_skip_pn(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config.set_cc_algorithm_name(cc_algorithm_name).unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -6992,11 +6943,9 @@ fn prevent_optimistic_ack(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config.set_cc_algorithm_name(cc_algorithm_name).unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -7259,11 +7208,9 @@ fn stream_priority(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -7484,11 +7431,9 @@ fn stream_reprioritize(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -7606,11 +7551,9 @@ fn stream_datagram_priority(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8094,11 +8037,9 @@ fn handshake_anti_deadlock(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert-big.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT_BIG)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8208,11 +8149,9 @@ fn dgram_send_app_limited(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8296,11 +8235,9 @@ fn dgram_single_datagram(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8336,11 +8273,9 @@ fn dgram_multiple_datagrams(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8413,11 +8348,9 @@ fn dgram_send_queue_overflow(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8462,11 +8395,9 @@ fn dgram_recv_queue_overflow(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8512,11 +8443,9 @@ fn dgram_send_max_size(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8567,11 +8496,9 @@ fn is_readable(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8655,11 +8582,9 @@ fn dgram_lost_stat(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -8744,6 +8669,7 @@ fn app_close_by_client(
     );
 }
 
+#[cfg(not(feature = "__rustls"))] // set_failing_private_key_method is a BoringSSL test hook
 #[rstest]
 fn app_close_by_server_during_handshake_private_key_failure(
     #[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str,
@@ -9042,10 +8968,10 @@ fn update_max_datagram_size(
         Ok(())
     );
     server_config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
     server_config
-        .load_priv_key_from_pem_file("examples/cert.key")
+        .load_priv_key_from_pem_file(test_utils::KEY)
         .unwrap();
     server_config
         .set_application_protos(&[b"proto1", b"proto2"])
@@ -9109,6 +9035,8 @@ fn update_max_datagram_size(
             .cwnd(),
         if cc_algorithm_name == "cubic" {
             12000
+        } else if cfg!(feature = "__rustls") {
+            13535
         } else {
             13421
         },
@@ -9127,11 +9055,9 @@ fn send_capacity(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -9184,6 +9110,8 @@ fn send_capacity(
         pipe.server.tx_cap,
         if cc_algorithm_name == "cubic" {
             12000
+        } else if cfg!(feature = "__rustls") {
+            13753
         } else {
             13873
         }
@@ -9195,6 +9123,8 @@ fn send_capacity(
         pipe.server.stream_send(8, &buf[..5000], false),
         if cc_algorithm_name == "cubic" {
             Ok(2000)
+        } else if cfg!(feature = "__rustls") {
+            Ok(3753)
         } else {
             Ok(3873)
         }
@@ -9220,10 +9150,10 @@ fn user_provided_boring_ctx(
         boring::ssl::SslContextBuilder::new(boring::ssl::SslMethod::tls())
             .unwrap();
     server_tls_ctx_builder
-        .set_certificate_chain_file("examples/cert.crt")
+        .set_certificate_chain_file(test_utils::CERT)
         .unwrap();
     server_tls_ctx_builder
-        .set_private_key_file("examples/cert.key", boring::ssl::SslFiletype::PEM)
+        .set_private_key_file(test_utils::KEY, boring::ssl::SslFiletype::PEM)
         .unwrap();
 
     let mut server_config = Config::with_boring_ssl_ctx_builder(
@@ -9235,8 +9165,8 @@ fn user_provided_boring_ctx(
         client_config.set_cc_algorithm_name(cc_algorithm_name),
         Ok(())
     );
-    client_config.load_cert_chain_from_pem_file("examples/cert.crt")?;
-    client_config.load_priv_key_from_pem_file("examples/cert.key")?;
+    client_config.load_cert_chain_from_pem_file(test_utils::CERT)?;
+    client_config.load_priv_key_from_pem_file(test_utils::KEY)?;
 
     for config in [&mut client_config, &mut server_config] {
         config.set_application_protos(&[b"proto1", b"proto2"])?;
@@ -9278,10 +9208,10 @@ fn in_handshake_config(
         boring::ssl::SslContextBuilder::new(boring::ssl::SslMethod::tls())
             .unwrap();
     server_tls_ctx_builder
-        .set_certificate_chain_file("examples/cert.crt")
+        .set_certificate_chain_file(test_utils::CERT)
         .unwrap();
     server_tls_ctx_builder
-        .set_private_key_file("examples/cert.key", boring::ssl::SslFiletype::PEM)
+        .set_private_key_file(test_utils::KEY, boring::ssl::SslFiletype::PEM)
         .unwrap();
     server_tls_ctx_builder.set_select_certificate_callback(|mut hello| {
         <Connection>::set_initial_congestion_window_packets_in_handshake(
@@ -9315,8 +9245,8 @@ fn in_handshake_config(
     );
 
     let mut client_config = Config::new(PROTOCOL_VERSION)?;
-    client_config.load_cert_chain_from_pem_file("examples/cert.crt")?;
-    client_config.load_priv_key_from_pem_file("examples/cert.key")?;
+    client_config.load_cert_chain_from_pem_file(test_utils::CERT)?;
+    client_config.load_priv_key_from_pem_file(test_utils::KEY)?;
 
     for config in [&mut client_config, &mut server_config] {
         config.set_application_protos(&[b"proto1", b"proto2"])?;
@@ -9563,8 +9493,8 @@ fn initial_cwnd(
         CUSTOM_INITIAL_CONGESTION_WINDOW_PACKETS,
     );
     // From Pipe::new()
-    config.load_cert_chain_from_pem_file("examples/cert.crt")?;
-    config.load_priv_key_from_pem_file("examples/cert.key")?;
+    config.load_cert_chain_from_pem_file(test_utils::CERT)?;
+    config.load_priv_key_from_pem_file(test_utils::KEY)?;
     config.set_application_protos(&[b"proto1", b"proto2"])?;
     config.set_initial_max_data(1000000);
     config.set_initial_max_stream_data_bidi_local(15);
@@ -9587,7 +9517,12 @@ fn initial_cwnd(
     } else {
         // TODO understand where these adjustments come from and why they vary
         // by OS target.
-        let expected = CUSTOM_INITIAL_CONGESTION_WINDOW_PACKETS * 1200 + 1447;
+        let expected = CUSTOM_INITIAL_CONGESTION_WINDOW_PACKETS * 1200 +
+            if cfg!(feature = "__rustls") {
+                1561
+            } else {
+                1447
+            };
 
         assert!(
             pipe.server.tx_cap >= expected,
@@ -9679,11 +9614,9 @@ fn send_connection_ids(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -9742,11 +9675,9 @@ fn connection_id_zero(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -9815,11 +9746,9 @@ fn connection_id_invalid_max_len(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -9888,11 +9817,9 @@ fn connection_id_handling(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -9976,11 +9903,9 @@ fn lost_connection_id_frames(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10036,11 +9961,9 @@ fn sending_duplicate_scids(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10086,11 +10009,9 @@ fn connection_id_retire_limit(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10214,11 +10135,9 @@ fn connection_id_retire_exotic_sequence(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10361,11 +10280,9 @@ fn path_validation(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10449,11 +10366,9 @@ fn losing_probing_packets(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10517,11 +10432,9 @@ fn failed_path_validation(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10572,11 +10485,9 @@ fn client_discard_unknown_address(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10608,11 +10519,9 @@ fn path_validation_limited_mtu(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10664,11 +10573,9 @@ fn path_probing_dos(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10728,11 +10635,9 @@ fn retiring_active_path_dcid(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10754,11 +10659,9 @@ fn send_on_path_test(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -10942,11 +10845,9 @@ fn connection_migration(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -11158,11 +11059,9 @@ fn connection_migration_zero_length_cid(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -11238,11 +11137,9 @@ fn connection_migration_reordered_non_probing(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -11308,11 +11205,9 @@ fn resilience_against_migration_attack(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -11334,8 +11229,12 @@ fn resilience_against_migration_attack(
     let mut recv_buf = [0; DATA_BYTES];
     let send1_bytes = pipe.server.stream_send(1, &buf, true).unwrap();
     assert_eq!(send1_bytes, match cc_algorithm_name {
-        "bbr2" => 13880,
-        "bbr2_gcongestion" => 13880,
+        "bbr2" | "bbr2_gcongestion" =>
+            if cfg!(feature = "__rustls") {
+                13760
+            } else {
+                13880
+            },
         _ => 12000,
     });
     assert_eq!(
@@ -11614,11 +11513,9 @@ fn stop_sending_stream_send_after_reset_stream_ack(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -11804,11 +11701,9 @@ fn challenge_no_cids(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -11906,11 +11801,9 @@ fn pmtud_probe_success(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config.set_cc_algorithm_name(cc_algorithm_name).unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config.set_application_protos(&[b"proto1"]).unwrap();
     config.verify_peer(false);
     config.set_max_send_udp_payload_size(1400);
@@ -11950,11 +11843,9 @@ fn pmtud_no_duplicate_probes(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config.set_cc_algorithm_name(cc_algorithm_name).unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config
         .set_application_protos(&[b"proto1", b"proto2"])
         .unwrap();
@@ -12017,11 +11908,9 @@ fn pmtud_probe_retry_after_loss(
     let mut config = Config::new(PROTOCOL_VERSION).unwrap();
     config.set_cc_algorithm_name(cc_algorithm_name).unwrap();
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
-    config
-        .load_priv_key_from_pem_file("examples/cert.key")
-        .unwrap();
+    config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
     config.set_application_protos(&[b"proto1"]).unwrap();
     config.verify_peer(false);
     config.set_max_send_udp_payload_size(1400);
@@ -12135,10 +12024,10 @@ fn enable_pmtud_mid_handshake(
         boring::ssl::SslContextBuilder::new(boring::ssl::SslMethod::tls())
             .unwrap();
     server_tls_ctx_builder
-        .set_certificate_chain_file("examples/cert.crt")
+        .set_certificate_chain_file(test_utils::CERT)
         .unwrap();
     server_tls_ctx_builder
-        .set_private_key_file("examples/cert.key", boring::ssl::SslFiletype::PEM)
+        .set_private_key_file(test_utils::KEY, boring::ssl::SslFiletype::PEM)
         .unwrap();
     server_tls_ctx_builder.set_select_certificate_callback(|mut hello| {
         <Connection>::set_discover_pmtu_in_handshake(hello.ssl_mut(), true, 1)
@@ -12159,10 +12048,10 @@ fn enable_pmtud_mid_handshake(
 
     let mut client_config = Config::new(PROTOCOL_VERSION).unwrap();
     client_config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
     client_config
-        .load_priv_key_from_pem_file("examples/cert.key")
+        .load_priv_key_from_pem_file(test_utils::KEY)
         .unwrap();
 
     for config in [&mut client_config, &mut server_config] {
@@ -12224,10 +12113,10 @@ fn disable_pmtud_mid_handshake(
         boring::ssl::SslContextBuilder::new(boring::ssl::SslMethod::tls())
             .unwrap();
     server_tls_ctx_builder
-        .set_certificate_chain_file("examples/cert.crt")
+        .set_certificate_chain_file(test_utils::CERT)
         .unwrap();
     server_tls_ctx_builder
-        .set_private_key_file("examples/cert.key", boring::ssl::SslFiletype::PEM)
+        .set_private_key_file(test_utils::KEY, boring::ssl::SslFiletype::PEM)
         .unwrap();
     server_tls_ctx_builder.set_select_certificate_callback(|mut hello| {
         <Connection>::set_discover_pmtu_in_handshake(hello.ssl_mut(), false, 0)
@@ -12248,10 +12137,10 @@ fn disable_pmtud_mid_handshake(
 
     let mut client_config = Config::new(PROTOCOL_VERSION).unwrap();
     client_config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
     client_config
-        .load_priv_key_from_pem_file("examples/cert.key")
+        .load_priv_key_from_pem_file(test_utils::KEY)
         .unwrap();
 
     for config in [&mut client_config, &mut server_config] {
@@ -12399,10 +12288,10 @@ fn connect_custom_client_dcid() {
 
     let mut server_config = Config::new(PROTOCOL_VERSION).unwrap();
     server_config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file(test_utils::CERT)
         .unwrap();
     server_config
-        .load_priv_key_from_pem_file("examples/cert.key")
+        .load_priv_key_from_pem_file(test_utils::KEY)
         .unwrap();
     server_config
         .set_application_protos(&[b"proto1", b"proto2"])
