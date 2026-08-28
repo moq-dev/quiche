@@ -1201,6 +1201,14 @@ fn zero_rtt(#[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str) {
     let mut b = [0; 15];
     assert_eq!(pipe.server.stream_recv(4, &mut b), Ok((12, true)));
     assert_eq!(&b[..12], b"hello, world");
+
+    // The resumed handshake completes, exercising the client's
+    // ZeroRTT-to-Handshake key transition.
+    assert_eq!(pipe.advance(), Ok(()));
+    assert!(pipe.client.is_established());
+    assert!(pipe.server.is_established());
+    assert!(pipe.client.is_resumed());
+    assert!(pipe.server.is_resumed());
 }
 
 #[rstest]

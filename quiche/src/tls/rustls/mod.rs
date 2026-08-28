@@ -65,6 +65,7 @@ use std::fs::DirEntry;
 use std::sync::Arc;
 
 const INTERNAL_ERROR: u64 = 0x01;
+const TLS_ALERT_ERROR: u64 = 0x100;
 
 /// Connection state the TLS callbacks-equivalent code paths mutate during
 /// `do_handshake`. Mirrors the boringssl backend's `ExData`, minus the fields
@@ -92,8 +93,7 @@ pub struct Context {
     server_config: Option<Arc<ServerConfig>>,
     // required to build the above configs
     // are consumed during configs building
-    private_key_client: Option<PrivateKeyDer<'static>>,
-    private_key_server: Option<PrivateKeyDer<'static>>,
+    private_key: Option<PrivateKeyDer<'static>>,
     ca_certificates: Option<Vec<CertificateDer<'static>>>,
     verify_ca_certificates_store: Option<RootCertStore>,
     system_default_cert_store: Option<RootCertStore>,
@@ -112,8 +112,7 @@ impl Context {
         Ok(Self {
             client_config: None,
             server_config: None,
-            private_key_client: None,
-            private_key_server: None,
+            private_key: None,
             ca_certificates: None,
             enable_verify_ca_certificates: false,
             verify_ca_certificates_store: None,
@@ -137,7 +136,7 @@ impl Context {
         };
 
         if self.server_config.is_none() &&
-            self.private_key_server.is_some() &&
+            self.private_key.is_some() &&
             self.ca_certificates.is_some()
         {
             let builder =
@@ -171,9 +170,10 @@ impl Context {
                 }
             };
 
-            let (Some(certs), Some(key)) =
-                (self.ca_certificates.clone(), self.private_key_server.take())
-            else {
+            let (Some(certs), Some(key)) = (
+                self.ca_certificates.clone(),
+                self.private_key.as_ref().map(|k| k.clone_key()),
+            ) else {
                 error!(
                     "server without certificate and key config is not supported"
                 );
@@ -242,9 +242,10 @@ impl Context {
                 }
             };
 
-            let mut config = if let (Some(certs), Some(key)) =
-                (self.ca_certificates.take(), self.private_key_client.take())
-            {
+            let mut config = if let (Some(certs), Some(key)) = (
+                self.ca_certificates.clone(),
+                self.private_key.as_ref().map(|k| k.clone_key()),
+            ) {
                 builder.with_client_auth_cert(certs, key).map_err(|e| {
                     error!("failed to set client auth: {}", e);
                     Error::TlsFail
@@ -289,6 +290,7 @@ impl Context {
             highest_level: Level::Initial,
             hostname: None,
             one_rtt_keys_secrets: None,
+            pending_tls_error: None,
         })
     }
 
@@ -311,6 +313,7 @@ impl Context {
     pub fn load_verify_locations_from_file(&mut self, file: &str) -> Result<()> {
         let verify_certificates = Self::load_ca_certificates_from_file(file)?;
         self.extend_verify_ca_certificates(verify_certificates);
+        self.invalidate_configs();
         Ok(())
     }
 
@@ -335,16 +338,20 @@ impl Context {
 
         let verify_certificates: Vec<CertificateDer> = files?
             .into_iter()
-            .flat_map(|f| Self::load_ca_certificates_from_file(f.path()))
+            .map(|f| Self::load_ca_certificates_from_file(f.path()))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
             .flatten()
             .collect();
 
         self.extend_verify_ca_certificates(verify_certificates);
+        self.invalidate_configs();
         Ok(())
     }
 
     pub fn use_certificate_chain_file(&mut self, file: &str) -> Result<()> {
         self.ca_certificates = Some(Self::load_ca_certificates_from_file(file)?);
+        self.invalidate_configs();
         Ok(())
     }
 
@@ -380,36 +387,43 @@ impl Context {
     }
 
     pub fn use_privkey_file(&mut self, file: &str) -> Result<()> {
-        let private_key_client =
-            PrivateKeyDer::from_pem_file(file).map_err(|e| {
-                error!("failed to load private key from pem: {}", e);
-                Error::TlsFail
-            })?;
-        let private_key_server =
-            PrivateKeyDer::from_pem_file(file).map_err(|e| {
-                error!("failed to load private key from pem: {}", e);
-                Error::TlsFail
-            })?;
+        let private_key = PrivateKeyDer::from_pem_file(file).map_err(|e| {
+            error!("failed to load private key from pem: {}", e);
+            Error::TlsFail
+        })?;
 
-        // NOTE: storing it twice as PrivateKeyDer cannot be copied/cloned
-        // ClientConfig & ServerConfig are built in new_handshake()
-        self.private_key_client = Some(private_key_client);
-        self.private_key_server = Some(private_key_server);
+        self.private_key = Some(private_key);
+        self.invalidate_configs();
         Ok(())
+    }
+
+    /// Built configs snapshot the settings at `new_handshake()` time; any
+    /// change afterwards (certificate rotation, ALPN, verification, keylog,
+    /// early data) must rebuild them or later connections silently keep the
+    /// old configuration.
+    fn invalidate_configs(&mut self) {
+        self.client_config = None;
+        self.server_config = None;
     }
 
     pub fn set_verify(&mut self, verify: bool) {
         self.enable_verify_ca_certificates = verify;
+        self.invalidate_configs();
     }
 
-    /// uses env variable SSLKEYLOGFILE
+    /// Keys are logged to the file named by the `SSLKEYLOGFILE` environment
+    /// variable, rustls's standard mechanism. A per-connection writer passed
+    /// to `Connection::set_keylog()` is NOT supported by this backend: rustls
+    /// key logging is configured per config, not per connection.
     pub fn enable_keylog(&mut self) {
         self.enable_keylog = true;
+        self.invalidate_configs();
     }
 
     pub fn set_alpn(&mut self, v: &[&[u8]]) -> Result<()> {
         let alpns: Vec<Vec<u8>> = v.iter().map(|a| a.to_vec()).collect();
         self.alpns = alpns;
+        self.invalidate_configs();
         Ok(())
     }
 
@@ -418,6 +432,7 @@ impl Context {
 
     pub fn set_early_data_enabled(&mut self, enabled: bool) {
         self.enable_early_data = enabled;
+        self.invalidate_configs();
     }
 }
 
@@ -435,6 +450,11 @@ pub struct Handshake {
     highest_level: Level,
     provided_data: Option<Vec<u8>>,
     one_rtt_keys_secrets: Option<(Keys, Secrets)>,
+
+    /// A fatal TLS alert from `read_hs`, surfaced on the next
+    /// `do_handshake()` call, which owns the `ExData` needed to record the
+    /// QUIC-level CRYPTO_ERROR close.
+    pending_tls_error: Option<ConnectionError>,
 }
 
 impl Handshake {
@@ -473,10 +493,6 @@ impl Handshake {
 
         self.quic_transport_params = Some(raw_params.to_vec());
         Ok(())
-    }
-
-    fn set_raw_quic_transport_params(&mut self, buf: &[u8]) {
-        self.quic_transport_params = Some(buf.to_vec());
     }
 
     pub fn quic_transport_params(&self) -> &[u8] {
@@ -527,23 +543,54 @@ impl Handshake {
 
         let Some(conn) = &mut self.connection else {
             trace!("storing data as no connection present side={:?}", self.side);
-            self.provided_data = Some(buf.to_vec());
+            // A large ClientHello arrives as multiple ordered chunks; append
+            // so the eventual `read_hs` sees the whole flight.
+            match &mut self.provided_data {
+                Some(data) => data.extend_from_slice(buf),
+                None => self.provided_data = Some(buf.to_vec()),
+            }
             return Ok(());
         };
 
-        conn.read_hs(buf).map_err(|e| {
-            if let Some(alert) = conn.alert() {
-                error!("alert description: {:?}", alert)
-            }
+        if let Err(e) = conn.read_hs(buf) {
             error!("failed to read handshake data: {:?} {:?}", self.side, e);
-            Error::TlsFail
-        })?;
+
+            // Defer the failure to the next `do_handshake()`, which owns the
+            // ExData and records the TLS alert as the QUIC connection close
+            // (0x0100 + alert), instead of letting the peer time out.
+            self.pending_tls_error = Some(Self::connection_error(
+                conn.alert(),
+                e.to_string().as_bytes().to_vec(),
+            ));
+        }
 
         Ok(())
     }
 
+    fn connection_error(
+        alert: Option<rustls::AlertDescription>, reason: Vec<u8>,
+    ) -> ConnectionError {
+        let error_code = match alert {
+            Some(alert) => TLS_ALERT_ERROR + u64::from(u8::from(alert)),
+            None => INTERNAL_ERROR,
+        };
+
+        ConnectionError {
+            is_app: false,
+            error_code,
+            reason,
+        }
+    }
+
     // local/send Crypto frame data
     pub fn do_handshake(&mut self, ex_data: &mut ExData) -> Result<()> {
+        if let Some(tls_error) = self.pending_tls_error.take() {
+            if ex_data.local_error.is_none() {
+                *ex_data.local_error = Some(tls_error);
+            }
+            return Err(Error::TlsFail);
+        }
+
         if self.connection.is_none() {
             debug!("no connection present side={:?}", self.side);
 
@@ -554,9 +601,24 @@ impl Handshake {
 
             match self.side {
                 Side::Client => {
-                    let Some(hostname) = self.hostname.clone() else {
-                        error!("hostname not present");
-                        return Err(Error::TlsFail);
+                    let hostname = match (
+                        self.hostname.clone(),
+                        self.enable_verify_ca_certificates,
+                    ) {
+                        (Some(hostname), _) => hostname,
+                        // No SNI with verification disabled matches the
+                        // BoringSSL backend's connect(None) behavior; rustls
+                        // requires SOME ServerName, so use a placeholder.
+                        (None, false) => ServerName::try_from("no.sni.invalid")
+                            .expect("static placeholder name parses")
+                            .to_owned(),
+                        (None, true) => {
+                            error!(
+                                "a verifying client connection needs a server \
+                                 name; pass one to connect()"
+                            );
+                            return Err(Error::TlsFail);
+                        },
                     };
 
                     // NOTE: generates ClientHello
@@ -598,11 +660,11 @@ impl Handshake {
                             Ok(()) => { /* continue */ },
                             Err(e) => {
                                 if ex_data.local_error.is_none() {
-                                    *ex_data.local_error = Some(ConnectionError {
-                                        is_app: false,
-                                        error_code: INTERNAL_ERROR,
-                                        reason: e.to_string().as_bytes().to_vec(),
-                                    })
+                                    *ex_data.local_error =
+                                        Some(Self::connection_error(
+                                            server_conn.alert(),
+                                            e.to_string().as_bytes().to_vec(),
+                                        ));
                                 };
                                 error!("failed to read handshake data: {:?}", e);
                                 return Err(Error::TlsFail);
@@ -644,24 +706,26 @@ impl Handshake {
         };
 
         if let Some(zero_rtt_keys) = conn.zero_rtt_keys() {
+            // rustls keeps reporting the 0-RTT keys while they remain valid,
+            // so install them only once, and never move the level BACKWARDS:
+            // a server sits past Initial by the time it sees them, and a
+            // resumed client moves on to Handshake while they are still
+            // reported.
             let space = &mut ex_data.crypto_ctx[packet::Epoch::Application];
             match self.side {
-                Side::Client => {
-                    if space.crypto_seal.is_some() {
-                        error!("client zero_rtt_keys are already present");
-                    };
-
-                    space.crypto_seal = Some(Seal::from(zero_rtt_keys));
-                },
-                Side::Server => {
-                    if space.crypto_0rtt_open.is_some() {
-                        error!("server zero_rtt_keys are already present");
-                    };
-
-                    space.crypto_0rtt_open = Some(Open::from(zero_rtt_keys));
-                },
+                Side::Client =>
+                    if space.crypto_seal.is_none() {
+                        space.crypto_seal = Some(Seal::from(zero_rtt_keys));
+                    },
+                Side::Server =>
+                    if space.crypto_0rtt_open.is_none() {
+                        space.crypto_0rtt_open = Some(Open::from(zero_rtt_keys));
+                    },
             }
-            self.highest_level = Level::ZeroRTT;
+
+            if self.highest_level == Level::Initial {
+                self.highest_level = Level::ZeroRTT;
+            }
         }
 
         trace!(
@@ -682,14 +746,14 @@ impl Handshake {
             !conn.is_handshaking() &&
             ex_data.session.is_none()
         {
+            // The blob is [len | backend session | len | peer params]: lib.rs
+            // decodes the second element itself and hands the first back to
+            // set_session() opaquely. rustls keeps the actual resumption
+            // state in the Context's in-memory store, so the backend element
+            // is empty.
             let mut session = Vec::new();
 
-            let local_params =
-                self.quic_transport_params.as_ref().unwrap().as_slice();
-            let local_params_len: [u8; 8] =
-                (local_params.len() as u64).to_be_bytes();
-            session.extend_from_slice(&local_params_len);
-            session.extend_from_slice(local_params);
+            session.extend_from_slice(&0u64.to_be_bytes());
 
             let peer_params = self.quic_transport_params();
             let peer_params_len: [u8; 8] =
@@ -708,7 +772,9 @@ impl Handshake {
     ) -> Result<bool> {
         match key_change {
             KeyChange::Handshake { keys } => match self.highest_level {
-                Level::Initial => {
+                // A client that sent 0-RTT data sits at ZeroRTT when the
+                // ServerHello arrives; everyone else at Initial.
+                Level::Initial | Level::ZeroRTT => {
                     let next_space =
                         &mut ex_data.crypto_ctx[packet::Epoch::Handshake];
 
@@ -721,7 +787,6 @@ impl Handshake {
                         );
                     };
 
-                    self.highest_level = Level::Handshake;
                     let (open, seal) = key_material_from_keys(keys, None)?;
                     next_space.crypto_open = Some(open);
                     next_space.crypto_seal = Some(seal);
@@ -729,9 +794,12 @@ impl Handshake {
                     self.highest_level = Level::Handshake;
                     Ok(true)
                 },
-                Level::ZeroRTT | Level::Handshake | Level::OneRTT => {
-                    debug_assert!(false, "required to handle handshake keys");
-                    Ok(false)
+                Level::Handshake | Level::OneRTT => {
+                    error!(
+                        "unexpected handshake key change at level {:?}",
+                        self.highest_level
+                    );
+                    Err(Error::TlsFail)
                 },
             },
 
@@ -769,7 +837,10 @@ impl Handshake {
     ) -> Result<()> {
         let pkt_num_space = match level {
             Level::Initial => &mut ex_data.crypto_ctx[packet::Epoch::Initial],
-            Level::ZeroRTT => unreachable!(),
+            Level::ZeroRTT => {
+                error!("TLS wrote crypto data at the 0-RTT level");
+                return Err(Error::TlsFail);
+            },
             Level::Handshake => &mut ex_data.crypto_ctx[packet::Epoch::Handshake],
             Level::OneRTT => &mut ex_data.crypto_ctx[packet::Epoch::Application],
         };
@@ -793,7 +864,13 @@ impl Handshake {
     }
 
     pub fn write_level(&self) -> Level {
-        self.highest_level
+        // lib.rs expects the BoringSSL write levels, which never report
+        // ZeroRTT: a client holding 0-RTT keys still writes its CRYPTO data
+        // at the Initial level.
+        match self.highest_level {
+            Level::ZeroRTT => Level::Initial,
+            level => level,
+        }
     }
 
     pub fn cipher(&self) -> Option<Algorithm> {
@@ -835,13 +912,18 @@ impl Handshake {
         Ok(())
     }
 
-    pub fn set_session(&mut self, session: &[u8]) -> Result<()> {
+    pub fn set_session(&mut self, _session: &[u8]) -> Result<()> {
         match self.side {
-            // peer transport parameters are part of the resumption_store
-            Side::Client => {
-                self.set_raw_quic_transport_params(session);
-                Ok(())
-            },
+            // The TLS resumption state lives in the Context's in-memory
+            // store, so there is nothing to restore into rustls here (which
+            // also means a session cannot resume in a new process, unlike
+            // BoringSSL's serialized SSL_SESSION). lib.rs restores the peer
+            // transport parameters from the blob itself. The freshly encoded
+            // LOCAL parameters are deliberately untouched: replacing them
+            // with a previous connection's would resurrect its
+            // initial_source_connection_id and the server would reject the
+            // resumed handshake.
+            Side::Client => Ok(()),
             Side::Server => {
                 error!("set session is a client only operation");
                 Err(Error::TlsFail)

@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -49,6 +51,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -111,6 +115,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -138,6 +144,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -170,6 +178,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -214,6 +224,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -237,6 +249,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@master
@@ -258,6 +272,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Build Docker images
         run: make docker-build
@@ -284,6 +300,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install stable toolchain for the target
         uses: dtolnay/rust-toolchain@master
