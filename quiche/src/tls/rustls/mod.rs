@@ -607,11 +607,19 @@ impl Handshake {
                     ) {
                         (Some(hostname), _) => hostname,
                         // No SNI with verification disabled matches the
-                        // BoringSSL backend's connect(None) behavior; rustls
-                        // requires SOME ServerName, so use a placeholder.
-                        (None, false) => ServerName::try_from("no.sni.invalid")
-                            .expect("static placeholder name parses")
-                            .to_owned(),
+                        // BoringSSL backend's connect(None) behavior. rustls
+                        // requires SOME ServerName, so use a placeholder, and
+                        // disable SNI so the placeholder never reaches the
+                        // wire.
+                        (None, false) => {
+                            let mut config = (*self.client_config).clone();
+                            config.enable_sni = false;
+                            self.client_config = Arc::new(config);
+
+                            ServerName::try_from("no.sni.invalid")
+                                .expect("static placeholder name parses")
+                                .to_owned()
+                        },
                         (None, true) => {
                             error!(
                                 "a verifying client connection needs a server \
@@ -987,6 +995,10 @@ impl Handshake {
         let Some(conn) = &self.connection else {
             return false;
         };
-        conn.zero_rtt_keys().is_some()
+
+        // rustls keeps reporting the early keys after the handshake, but
+        // early data ENDS with the handshake: an established client must
+        // send 1-RTT packets, not more 0-RTT.
+        conn.is_handshaking() && conn.zero_rtt_keys().is_some()
     }
 }
