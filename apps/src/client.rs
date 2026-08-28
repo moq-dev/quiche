@@ -24,6 +24,8 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+use std::time::Instant;
+
 use crate::args::*;
 use crate::common::*;
 
@@ -226,7 +228,9 @@ pub fn connect(
         scid,
     );
 
-    let (write, send_info) = conn.send(&mut out).expect("initial send failed");
+    let (write, send_info) = conn
+        .send(&mut out, Instant::now())
+        .expect("initial send failed");
 
     while let Err(e) = socket.send_to(&out[..write], send_info.to) {
         if e.kind() == std::io::ErrorKind::WouldBlock {
@@ -253,7 +257,8 @@ pub fn connect(
 
     loop {
         if !conn.is_in_early_data() || app_proto_selected {
-            poll.poll(&mut events, conn.timeout()).unwrap();
+            poll.poll(&mut events, conn.timeout(Instant::now()))
+                .unwrap();
         }
 
         // If the event loop reported no events, it means that the timeout
@@ -262,7 +267,7 @@ pub fn connect(
         if events.is_empty() {
             trace!("timed out");
 
-            conn.on_timeout();
+            conn.on_timeout(Instant::now());
         }
 
         // Read incoming UDP packets from the socket and feed them to quiche,
@@ -314,14 +319,15 @@ pub fn connect(
                 };
 
                 // Process potentially coalesced packets.
-                let read = match conn.recv(&mut buf[..len], recv_info) {
-                    Ok(v) => v,
+                let read =
+                    match conn.recv(&mut buf[..len], recv_info, Instant::now()) {
+                        Ok(v) => v,
 
-                    Err(e) => {
-                        error!("{local_addr}: recv failed: {e:?}");
-                        continue 'read;
-                    },
-                };
+                        Err(e) => {
+                            error!("{local_addr}: recv failed: {e:?}");
+                            continue 'read;
+                        },
+                    };
 
                 trace!("{local_addr}: processed {read} bytes");
             }
@@ -429,7 +435,7 @@ pub fn connect(
 
                 quiche::PathEvent::Validated(local_addr, peer_addr) => {
                     info!("Path ({local_addr}, {peer_addr}) is now validated");
-                    conn.migrate(local_addr, peer_addr).unwrap();
+                    conn.migrate(local_addr, peer_addr, Instant::now()).unwrap();
                     migrated = true;
                 },
 
@@ -501,6 +507,7 @@ pub fn connect(
                         &mut out,
                         Some(local_addr),
                         Some(peer_addr),
+                        Instant::now(),
                     ) {
                         Ok(v) => v,
 

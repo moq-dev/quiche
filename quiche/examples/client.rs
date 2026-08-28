@@ -27,6 +27,8 @@
 #[macro_use]
 extern crate log;
 
+use std::time::Instant;
+
 use ring::rand::*;
 
 const MAX_DATAGRAM_SIZE: usize = 1350;
@@ -119,7 +121,9 @@ fn main() {
         hex_dump(&scid)
     );
 
-    let (write, send_info) = conn.send(&mut out).expect("initial send failed");
+    let (write, send_info) = conn
+        .send(&mut out, Instant::now())
+        .expect("initial send failed");
 
     while let Err(e) = socket.send_to(&out[..write], send_info.to) {
         if e.kind() == std::io::ErrorKind::WouldBlock {
@@ -137,7 +141,8 @@ fn main() {
     let mut req_sent = false;
 
     loop {
-        poll.poll(&mut events, conn.timeout()).unwrap();
+        poll.poll(&mut events, conn.timeout(Instant::now()))
+            .unwrap();
 
         // Read incoming UDP packets from the socket and feed them to quiche,
         // until there are no more packets to read.
@@ -148,7 +153,7 @@ fn main() {
             if events.is_empty() {
                 debug!("timed out");
 
-                conn.on_timeout();
+                conn.on_timeout(Instant::now());
                 break 'read;
             }
 
@@ -175,7 +180,8 @@ fn main() {
             };
 
             // Process potentially coalesced packets.
-            let read = match conn.recv(&mut buf[..len], recv_info) {
+            let read = match conn.recv(&mut buf[..len], recv_info, Instant::now())
+            {
                 Ok(v) => v,
 
                 Err(e) => {
@@ -239,7 +245,7 @@ fn main() {
         // Generate outgoing QUIC packets and send them on the UDP socket, until
         // quiche reports that there are no more packets to be sent.
         loop {
-            let (write, send_info) = match conn.send(&mut out) {
+            let (write, send_info) = match conn.send(&mut out, Instant::now()) {
                 Ok(v) => v,
 
                 Err(quiche::Error::Done) => {

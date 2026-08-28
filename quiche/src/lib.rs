@@ -110,6 +110,7 @@
 //! incoming packets that belong to that connection from the network:
 //!
 //! ```no_run
+//! # use std::time::Instant;
 //! # let mut buf = [0; 512];
 //! # let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
 //! # let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
@@ -124,7 +125,7 @@
 //!
 //!     let recv_info = quiche::RecvInfo { from, to };
 //!
-//!     let read = match conn.recv(&mut buf[..read], recv_info) {
+//!     let read = match conn.recv(&mut buf[..read], recv_info, Instant::now()) {
 //!         Ok(v) => v,
 //!
 //!         Err(quiche::Error::Done) => {
@@ -151,6 +152,7 @@
 //! instead:
 //!
 //! ```no_run
+//! # use std::time::Instant;
 //! # let mut out = [0; 512];
 //! # let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
 //! # let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
@@ -159,7 +161,7 @@
 //! # let local = "127.0.0.1:4321".parse().unwrap();
 //! # let mut conn = quiche::accept(&scid, None, local, peer, &mut config)?;
 //! loop {
-//!     let (write, send_info) = match conn.send(&mut out) {
+//!     let (write, send_info) = match conn.send(&mut out, Instant::now()) {
 //!         Ok(v) => v,
 //!
 //!         Err(quiche::Error::Done) => {
@@ -187,12 +189,13 @@
 //! obtained using the connection's [`timeout()`] method.
 //!
 //! ```
+//! # use std::time::Instant;
 //! # let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
 //! # let scid = quiche::ConnectionId::from_ref(&[0xba; 16]);
 //! # let peer = "127.0.0.1:1234".parse().unwrap();
 //! # let local = "127.0.0.1:4321".parse().unwrap();
 //! # let mut conn = quiche::accept(&scid, None, local, peer, &mut config)?;
-//! let timeout = conn.timeout();
+//! let timeout = conn.timeout(Instant::now());
 //! # Ok::<(), quiche::Error>(())
 //! ```
 //!
@@ -202,6 +205,7 @@
 //! after which additional packets might need to be sent on the network:
 //!
 //! ```no_run
+//! # use std::time::Instant;
 //! # let mut out = [0; 512];
 //! # let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
 //! # let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
@@ -210,11 +214,11 @@
 //! # let local = "127.0.0.1:4321".parse().unwrap();
 //! # let mut conn = quiche::accept(&scid, None, local, peer, &mut config)?;
 //! // Timeout expired, handle it.
-//! conn.on_timeout();
+//! conn.on_timeout(Instant::now());
 //!
 //! // Send more packets as needed after timeout.
 //! loop {
-//!     let (write, send_info) = match conn.send(&mut out) {
+//!     let (write, send_info) = match conn.send(&mut out, Instant::now()) {
 //!         Ok(v) => v,
 //!
 //!         Err(quiche::Error::Done) => {
@@ -2791,6 +2795,7 @@ impl<F: BufFactory> Connection<F> {
     /// ## Examples:
     ///
     /// ```no_run
+    /// # use std::time::Instant;
     /// # let mut buf = [0; 512];
     /// # let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     /// # let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
@@ -2806,7 +2811,7 @@ impl<F: BufFactory> Connection<F> {
     ///         to: local,
     ///     };
     ///
-    ///     let read = match conn.recv(&mut buf[..read], recv_info) {
+    ///     let read = match conn.recv(&mut buf[..read], recv_info, Instant::now()) {
     ///         Ok(v) => v,
     ///
     ///         Err(e) => {
@@ -2817,7 +2822,9 @@ impl<F: BufFactory> Connection<F> {
     /// }
     /// # Ok::<(), quiche::Error>(())
     /// ```
-    pub fn recv(&mut self, buf: &mut [u8], info: RecvInfo) -> Result<usize> {
+    pub fn recv(
+        &mut self, buf: &mut [u8], info: RecvInfo, now: Instant,
+    ) -> Result<usize> {
         let len = buf.len();
 
         if len == 0 {
@@ -2864,6 +2871,7 @@ impl<F: BufFactory> Connection<F> {
                 &mut buf[len - left..len],
                 &info,
                 recv_pid,
+                now,
             ) {
                 Ok(v) => v,
 
@@ -2894,12 +2902,12 @@ impl<F: BufFactory> Connection<F> {
         // Even though the packet was previously "accepted", it
         // should be safe to forward the error, as it also comes
         // from the `recv()` method.
-        self.process_undecrypted_0rtt_packets()?;
+        self.process_undecrypted_0rtt_packets(now)?;
 
         Ok(done)
     }
 
-    fn process_undecrypted_0rtt_packets(&mut self) -> Result<()> {
+    fn process_undecrypted_0rtt_packets(&mut self, now: Instant) -> Result<()> {
         // Process previously undecryptable 0-RTT packets if the decryption key
         // is now available.
         if self.crypto_ctx[packet::Epoch::Application]
@@ -2908,7 +2916,7 @@ impl<F: BufFactory> Connection<F> {
         {
             while let Some((mut pkt, info)) = self.undecryptable_pkts.pop_front()
             {
-                if let Err(e) = self.recv(&mut pkt, info) {
+                if let Err(e) = self.recv(&mut pkt, info, now) {
                     self.undecryptable_pkts.clear();
 
                     return Err(e);
@@ -2959,9 +2967,8 @@ impl<F: BufFactory> Connection<F> {
     /// [`Done`]: enum.Error.html#variant.Done
     fn recv_single(
         &mut self, buf: &mut [u8], info: &RecvInfo, recv_pid: Option<usize>,
+        now: Instant,
     ) -> Result<usize> {
-        let now = Instant::now();
-
         if buf.is_empty() {
             return Err(Error::Done);
         }
@@ -3840,6 +3847,7 @@ impl<F: BufFactory> Connection<F> {
     /// ## Examples:
     ///
     /// ```no_run
+    /// # use std::time::Instant;
     /// # let mut out = [0; 512];
     /// # let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     /// # let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
@@ -3848,7 +3856,7 @@ impl<F: BufFactory> Connection<F> {
     /// # let local = socket.local_addr().unwrap();
     /// # let mut conn = quiche::accept(&scid, None, local, peer, &mut config)?;
     /// loop {
-    ///     let (write, send_info) = match conn.send(&mut out) {
+    ///     let (write, send_info) = match conn.send(&mut out, Instant::now()) {
     ///         Ok(v) => v,
     ///
     ///         Err(quiche::Error::Done) => {
@@ -3866,8 +3874,10 @@ impl<F: BufFactory> Connection<F> {
     /// }
     /// # Ok::<(), quiche::Error>(())
     /// ```
-    pub fn send(&mut self, out: &mut [u8]) -> Result<(usize, SendInfo)> {
-        self.send_on_path(out, None, None)
+    pub fn send(
+        &mut self, out: &mut [u8], now: Instant,
+    ) -> Result<(usize, SendInfo)> {
+        self.send_on_path(out, None, None, now)
     }
 
     /// Writes a single QUIC packet to be sent to the peer from the specified
@@ -3927,6 +3937,7 @@ impl<F: BufFactory> Connection<F> {
     /// ## Examples:
     ///
     /// ```no_run
+    /// # use std::time::Instant;
     /// # let mut out = [0; 512];
     /// # let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     /// # let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
@@ -3935,7 +3946,8 @@ impl<F: BufFactory> Connection<F> {
     /// # let local = socket.local_addr().unwrap();
     /// # let mut conn = quiche::accept(&scid, None, local, peer, &mut config)?;
     /// loop {
-    ///     let (write, send_info) = match conn.send_on_path(&mut out, Some(local), Some(peer)) {
+    ///     let (write, send_info) =
+    ///         match conn.send_on_path(&mut out, Some(local), Some(peer), Instant::now()) {
     ///         Ok(v) => v,
     ///
     ///         Err(quiche::Error::Done) => {
@@ -3955,7 +3967,7 @@ impl<F: BufFactory> Connection<F> {
     /// ```
     pub fn send_on_path(
         &mut self, out: &mut [u8], from: Option<SocketAddr>,
-        to: Option<SocketAddr>,
+        to: Option<SocketAddr>, now: Instant,
     ) -> Result<(usize, SendInfo)> {
         if out.is_empty() {
             return Err(Error::BufferTooShort);
@@ -3964,8 +3976,6 @@ impl<F: BufFactory> Connection<F> {
         if self.is_closed() || self.is_draining() {
             return Err(Error::Done);
         }
-
-        let now = Instant::now();
 
         if self.local_error.is_none() {
             self.do_handshake(now)?;
@@ -3977,7 +3987,7 @@ impl<F: BufFactory> Connection<F> {
         //
         // We simply fall-through to sending packets, which should
         // take care of terminating the connection as needed.
-        let _ = self.process_undecrypted_0rtt_packets();
+        let _ = self.process_undecrypted_0rtt_packets(now);
 
         // There's no point in trying to send a packet if the Initial secrets
         // have not been derived yet, so return early.
@@ -7026,10 +7036,8 @@ impl<F: BufFactory> Connection<F> {
     /// be called. A timeout of `None` means that the timer should be disarmed.
     ///
     /// [`on_timeout()`]: struct.Connection.html#method.on_timeout
-    pub fn timeout(&self) -> Option<Duration> {
+    pub fn timeout(&self, now: Instant) -> Option<Duration> {
         self.timeout_instant().map(|timeout| {
-            let now = Instant::now();
-
             if timeout <= now {
                 Duration::ZERO
             } else {
@@ -7041,9 +7049,7 @@ impl<F: BufFactory> Connection<F> {
     /// Processes a timeout event.
     ///
     /// If no timeout has occurred it does nothing.
-    pub fn on_timeout(&mut self) {
-        let now = Instant::now();
-
+    pub fn on_timeout(&mut self, now: Instant) {
         if let Some(draining_timer) = self.draining_timer {
             if draining_timer <= now {
                 trace!("{} draining timeout expired", self.trace_id);
@@ -7181,9 +7187,11 @@ impl<F: BufFactory> Connection<F> {
     /// See [`migrate()`] for the full specification of this method.
     ///
     /// [`migrate()`]: struct.Connection.html#method.migrate
-    pub fn migrate_source(&mut self, local_addr: SocketAddr) -> Result<u64> {
+    pub fn migrate_source(
+        &mut self, local_addr: SocketAddr, now: Instant,
+    ) -> Result<u64> {
         let peer_addr = self.paths.get_active()?.peer_addr();
-        self.migrate(local_addr, peer_addr)
+        self.migrate(local_addr, peer_addr, now)
     }
 
     /// Migrates the connection over the given network path between `local_addr`
@@ -7201,7 +7209,7 @@ impl<F: BufFactory> Connection<F> {
     /// [`OutOfIdentifiers`]: enum.Error.html#OutOfIdentifiers
     /// [`InvalidState`]: enum.Error.html#InvalidState
     pub fn migrate(
-        &mut self, local_addr: SocketAddr, peer_addr: SocketAddr,
+        &mut self, local_addr: SocketAddr, peer_addr: SocketAddr, now: Instant,
     ) -> Result<u64> {
         if self.is_server {
             return Err(Error::InvalidState);
@@ -7257,7 +7265,7 @@ impl<F: BufFactory> Connection<F> {
         };
 
         // Change the active path.
-        self.set_active_path(pid, Instant::now())?;
+        self.set_active_path(pid, now)?;
 
         Ok(dcid_seq)
     }
@@ -7450,6 +7458,7 @@ impl<F: BufFactory> Connection<F> {
     /// ## Examples:
     ///
     /// ```no_run
+    /// # use std::time::Instant;
     /// # let mut out = [0; 512];
     /// # let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     /// # let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
@@ -7461,7 +7470,7 @@ impl<F: BufFactory> Connection<F> {
     /// for dest in conn.paths_iter(local) {
     ///     loop {
     ///         let (write, send_info) =
-    ///             match conn.send_on_path(&mut out, Some(local), Some(dest)) {
+    ///             match conn.send_on_path(&mut out, Some(local), Some(dest), Instant::now()) {
     ///                 Ok(v) => v,
     ///
     ///                 Err(quiche::Error::Done) => {

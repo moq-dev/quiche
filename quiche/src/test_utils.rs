@@ -343,7 +343,7 @@ impl<F: BufFactory> Pipe<F> {
             from: server_path.local_addr(),
         };
 
-        self.client.recv(buf, info)
+        self.client.recv(buf, info, Instant::now())
     }
 
     pub fn server_recv(&mut self, buf: &mut [u8]) -> Result<usize> {
@@ -353,7 +353,7 @@ impl<F: BufFactory> Pipe<F> {
             from: client_path.local_addr(),
         };
 
-        self.server.recv(buf, info)
+        self.server.recv(buf, info, Instant::now())
     }
 
     pub fn send_pkt_to_server(
@@ -404,11 +404,11 @@ pub fn recv_send<F: BufFactory>(
         from: active_path.peer_addr(),
     };
 
-    conn.recv(&mut buf[..len], info)?;
+    conn.recv(&mut buf[..len], info, Instant::now())?;
 
     let mut off = 0;
 
-    match conn.send(&mut buf[off..]) {
+    match conn.send(&mut buf[off..], Instant::now()) {
         Ok((write, _)) => off += write,
 
         Err(Error::Done) => (),
@@ -428,7 +428,7 @@ pub fn process_flight<F: BufFactory>(
             from: si.from,
         };
 
-        conn.recv(&mut pkt, info)?;
+        conn.recv(&mut pkt, info, Instant::now())?;
     }
 
     Ok(())
@@ -443,7 +443,7 @@ pub fn emit_flight_with_max_buffer<F: BufFactory>(
     loop {
         let mut out = vec![0u8; out_size];
 
-        let info = match conn.send_on_path(&mut out, from, to) {
+        let info = match conn.send_on_path(&mut out, from, to, Instant::now()) {
             Ok((written, info)) => {
                 out.truncate(written);
                 info
@@ -660,22 +660,26 @@ pub fn trigger_ack_based_loss<F: BufFactory>(
 
     for _ in 0..pkt_thresh {
         sender.send_ack_eliciting().unwrap();
-        let (len, _) = sender.send(&mut buf).unwrap();
+        let (len, _) = sender.send(&mut buf, Instant::now()).unwrap();
 
         let info = RecvInfo {
             to: receiver.paths.get_active().unwrap().local_addr(),
             from: receiver.paths.get_active().unwrap().peer_addr(),
         };
-        receiver.recv(&mut buf[..len], info).unwrap();
+        receiver
+            .recv(&mut buf[..len], info, Instant::now())
+            .unwrap();
     }
 
     // Receiver sends ACK for the new packets.
-    let (ack_len, _) = receiver.send(&mut buf).unwrap();
+    let (ack_len, _) = receiver.send(&mut buf, Instant::now()).unwrap();
 
     // Sender receives ACK, triggering loss detection.
     let info = RecvInfo {
         to: sender.paths.get_active().unwrap().local_addr(),
         from: sender.paths.get_active().unwrap().peer_addr(),
     };
-    sender.recv(&mut buf[..ack_len], info).unwrap();
+    sender
+        .recv(&mut buf[..ack_len], info, Instant::now())
+        .unwrap();
 }
