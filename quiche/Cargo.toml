@@ -30,6 +30,10 @@ default = ["boringssl-boring-crate"]
 # Use the BoringSSL library provided by the boring crate.
 boringssl-boring-crate = ["boring", "foreign-types-shared"]
 
+# Internal marker for the rustls TLS backend (moq fork). Enabled through
+# `rustls-aws-lc-rs` or `rustls-ring`, never directly.
+__rustls = []
+
 # Allow client connections to provide a custom DCID when initiating a
 # connection. Be aware that RFC 9000 places requirements for unpredictability and
 # length on the client DCID field. Enabling this feature can be dangerous if these
