@@ -30,8 +30,11 @@ default = ["boringssl-boring-crate"]
 # Use the BoringSSL library provided by the boring crate.
 boringssl-boring-crate = ["boring", "foreign-types-shared"]
 
-# Internal marker for the rustls TLS backend (moq fork). Enabled through
-# `rustls-aws-lc-rs` or `rustls-ring`, never directly.
+# Build quiche's TLS layer and packet protection on rustls instead of
+# BoringSSL (moq fork). Pick the crypto provider explicitly; __rustls is the
+# internal marker and is never enabled directly.
+rustls-aws-lc-rs = ["rustls/aws-lc-rs", "dep:aws-lc-rs", "dep:rustls", "dep:rustls-native-certs", "__rustls"]
+rustls-ring = ["rustls/ring", "dep:rustls", "dep:ring", "dep:rustls-native-certs", "__rustls"]
 __rustls = []
 
 # Allow client connections to provide a custom DCID when initiating a
@@ -89,6 +92,10 @@ sfv = { version = "0.9", optional = true }
 slab = "0.4"
 smallvec = { workspace = true, features = ["union"] }
 enum_dispatch = "0.3"
+rustls = { version = "0.23.26", default-features = false, features = ["std", "logging"], optional = true }
+rustls-native-certs = { version = "0.8.1", optional = true }
+ring = { version = "0.17", optional = true }
+aws-lc-rs = { version = "1.13.0", default-features = false, optional = true }
 
 [target."cfg(windows)".dependencies]
 windows-sys = { version = "0.59", features = [

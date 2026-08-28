@@ -18,6 +18,29 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  # moq fork: the rustls TLS backend, both crypto providers.
+  quiche_rustls:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    strategy:
+      matrix:
+        provider: [rustls-aws-lc-rs, rustls-ring]
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUSTTOOLCHAIN }}
+          components: clippy
+
+      - name: Run cargo test
+        run: cargo test --verbose -p quiche --no-default-features --features ${{ matrix.provider }}
+
+      - name: Run cargo clippy
+        run: cargo clippy -p quiche --no-default-features --features ${{ matrix.provider }} -- -D warnings
+
   quiche:
     runs-on: ubuntu-latest
     # Only run on "pull_request" event for external PRs. This is to avoid
@@ -63,7 +86,12 @@ jobs:
         run: cargo clippy --examples ${{ env.DEFAULT_OPTIONS }} -- -D warnings
 
       - name: Run cargo doc
-        run: cargo doc --no-deps --all-features --document-private-items
+        run: cargo doc --no-deps --features async,ffi,qlog,internal,gcongestion,custom-client-dcid --document-private-items
+
+      # The rustls backend is feature-exclusive with BoringSSL (see
+      # src/tls/mod.rs), so --all-features cannot build; document it separately.
+      - name: Run cargo doc (rustls)
+        run: cargo doc --no-deps --no-default-features --features rustls-aws-lc-rs,qlog,internal -p quiche --document-private-items
 
       - name: Build C examples
         run: |

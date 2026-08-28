@@ -2310,11 +2310,9 @@ mod tests {
     fn retired_scid_iter() {
         let mut config = Config::new(PROTOCOL_VERSION).unwrap();
         config
-            .load_cert_chain_from_pem_file("examples/cert.crt")
+            .load_cert_chain_from_pem_file(test_utils::CERT)
             .unwrap();
-        config
-            .load_priv_key_from_pem_file("examples/cert.key")
-            .unwrap();
+        config.load_priv_key_from_pem_file(test_utils::KEY).unwrap();
         config
             .set_application_protos(&[b"proto1", b"proto2"])
             .unwrap();

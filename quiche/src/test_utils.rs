@@ -30,6 +30,25 @@ use smallvec::smallvec;
 
 use crate::recovery::Sent;
 
+// rustls rejects the v1 test certificates BoringSSL accepts, so each backend
+// gets its own pre-generated chain (see examples/gen-certs.sh).
+pub const KEY: &str = "examples/cert.key";
+
+#[cfg(not(feature = "__rustls"))]
+pub const CERT: &str = "examples/cert.crt";
+#[cfg(feature = "__rustls")]
+pub const CERT: &str = "examples/cert_rustls.crt";
+
+#[cfg(not(feature = "__rustls"))]
+pub const CERT_BIG: &str = "examples/cert-big.crt";
+#[cfg(feature = "__rustls")]
+pub const CERT_BIG: &str = "examples/cert-big_rustls.crt";
+
+#[cfg(not(feature = "__rustls"))]
+pub const ROOTCA: &str = "examples/rootca.crt";
+#[cfg(feature = "__rustls")]
+pub const ROOTCA: &str = "examples/rootca_rustls.crt";
+
 pub struct Pipe<F = DefaultBufFactory>
 where
     F: BufFactory,
@@ -42,8 +61,8 @@ impl Pipe {
     pub fn default_config(cc_algorithm_name: &str) -> Result<Config> {
         let mut config = Config::new(PROTOCOL_VERSION)?;
         assert_eq!(config.set_cc_algorithm_name(cc_algorithm_name), Ok(()));
-        config.load_cert_chain_from_pem_file("examples/cert.crt")?;
-        config.load_priv_key_from_pem_file("examples/cert.key")?;
+        config.load_cert_chain_from_pem_file(CERT)?;
+        config.load_priv_key_from_pem_file(KEY)?;
         config.set_application_protos(&[b"proto1", b"proto2"])?;
         config.set_initial_max_data(30);
         config.set_initial_max_stream_data_bidi_local(15);
@@ -62,14 +81,9 @@ impl Pipe {
         let mut ctx_builder =
             boring::ssl::SslContextBuilder::new(boring::ssl::SslMethod::tls())
                 .unwrap();
+        ctx_builder.set_certificate_chain_file(CERT).unwrap();
         ctx_builder
-            .set_certificate_chain_file("examples/cert.crt")
-            .unwrap();
-        ctx_builder
-            .set_private_key_file(
-                "examples/cert.key",
-                boring::ssl::SslFiletype::PEM,
-            )
+            .set_private_key_file(KEY, boring::ssl::SslFiletype::PEM)
             .unwrap();
 
         ctx_builder
@@ -200,8 +214,8 @@ impl<F: BufFactory> Pipe<F> {
         let server_addr = Pipe::server_addr();
 
         let mut config = Config::new(PROTOCOL_VERSION)?;
-        config.load_cert_chain_from_pem_file("examples/cert.crt")?;
-        config.load_priv_key_from_pem_file("examples/cert.key")?;
+        config.load_cert_chain_from_pem_file(CERT)?;
+        config.load_priv_key_from_pem_file(KEY)?;
         config.set_application_protos(&[b"proto1", b"proto2"])?;
         config.set_initial_max_data(30);
         config.set_initial_max_stream_data_bidi_local(15);
