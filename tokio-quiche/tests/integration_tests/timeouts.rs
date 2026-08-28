@@ -24,6 +24,8 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+use std::time::Instant;
+
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -174,7 +176,9 @@ async fn test_handshake_timeout_with_one_client_flight() {
 
     // Send first Initial packet
     let mut out = [0; 65535];
-    let (write, _) = quiche_conn.send(&mut out).expect("initial send failed");
+    let (write, _) = quiche_conn
+        .send(&mut out, Instant::now())
+        .expect("initial send failed");
     socket.send(&out[..write]).await.unwrap();
 
     // Receive Retry packet
@@ -183,10 +187,10 @@ async fn test_handshake_timeout_with_one_client_flight() {
         from,
         to: socket.local_addr().unwrap(),
     };
-    let _ = quiche_conn.recv(&mut out[..len], recv_info);
+    let _ = quiche_conn.recv(&mut out[..len], recv_info, Instant::now());
 
     // Send second Initial packet, which will spawn the TQ Handshake IOW
-    let (written, _) = quiche_conn.send(&mut out).unwrap();
+    let (written, _) = quiche_conn.send(&mut out, Instant::now()).unwrap();
     socket.send(&out[..written]).await.unwrap();
 
     let err = timeout(
@@ -199,7 +203,8 @@ async fn test_handshake_timeout_with_one_client_flight() {
                     from,
                     to: socket.local_addr().unwrap(),
                 };
-                let _ = quiche_conn.recv(&mut out[..len], recv_info);
+                let _ =
+                    quiche_conn.recv(&mut out[..len], recv_info, Instant::now());
 
                 if let Some(e) = quiche_conn.peer_error().cloned() {
                     return e;

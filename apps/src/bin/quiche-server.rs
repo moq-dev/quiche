@@ -27,6 +27,8 @@
 #[macro_use]
 extern crate log;
 
+use std::time::Instant;
+
 use std::io;
 
 use std::net;
@@ -185,7 +187,10 @@ fn main() {
         let timeout = match continue_write {
             true => Some(std::time::Duration::from_secs(0)),
 
-            false => clients.values().filter_map(|c| c.conn.timeout()).min(),
+            false => clients
+                .values()
+                .filter_map(|c| c.conn.timeout(Instant::now()))
+                .min(),
         };
 
         let mut poll_res = poll.poll(&mut events, timeout);
@@ -207,7 +212,9 @@ fn main() {
             if events.is_empty() && !continue_write {
                 trace!("timed out");
 
-                clients.values_mut().for_each(|c| c.conn.on_timeout());
+                clients
+                    .values_mut()
+                    .for_each(|c| c.conn.on_timeout(Instant::now()));
 
                 break 'read;
             }
@@ -425,7 +432,8 @@ fn main() {
             };
 
             // Process potentially coalesced packets.
-            let read = match client.conn.recv(pkt_buf, recv_info) {
+            let read = match client.conn.recv(pkt_buf, recv_info, Instant::now())
+            {
                 Ok(v) => v,
 
                 Err(e) => {
@@ -561,7 +569,7 @@ fn main() {
             while total_write < max_send_burst {
                 let (write, send_info) = match client
                     .conn
-                    .send(&mut out[total_write..max_send_burst])
+                    .send(&mut out[total_write..max_send_burst], Instant::now())
                 {
                     Ok(v) => v,
 

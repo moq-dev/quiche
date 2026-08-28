@@ -834,6 +834,7 @@ mod tests {
     use rstest::rstest;
     use smallvec::smallvec;
     use std::str::FromStr;
+    use std::time::Instant;
 
     fn recovery_for_alg(algo: CongestionControlAlgorithm) -> Recovery {
         let mut cfg = Config::new(crate::PROTOCOL_VERSION).unwrap();
@@ -2975,7 +2976,7 @@ mod tests {
         let mut buf = [0; 65535];
 
         // Send the packet but drop it (don't deliver to server)
-        let (len1, _) = pipe.client.send(&mut buf).unwrap();
+        let (len1, _) = pipe.client.send(&mut buf, Instant::now()).unwrap();
         assert!(len1 > 0);
 
         // Verify lost_count is 0 (no losses yet)
@@ -3002,11 +3003,11 @@ mod tests {
         );
 
         // Wait for PTO timeout
-        let timer = pipe.client.timeout().unwrap();
+        let timer = pipe.client.timeout(Instant::now()).unwrap();
         std::thread::sleep(timer + Duration::from_millis(1));
 
         // Trigger PTO via on_timeout()
-        pipe.client.on_timeout();
+        pipe.client.on_timeout(Instant::now());
 
         // After PTO, frames should be in lost_frames for retransmission
         let lost_frames_after_pto = pipe
@@ -3035,7 +3036,7 @@ mod tests {
         );
 
         // Now send the retransmission via send_on_path
-        let (len2, _) = pipe.client.send(&mut buf).unwrap();
+        let (len2, _) = pipe.client.send(&mut buf, Instant::now()).unwrap();
         assert!(len2 > 0, "Should send PTO probe packet");
 
         // After sending, lost_count should still be 0

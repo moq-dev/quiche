@@ -11,10 +11,22 @@ per-stream delivery telemetry, congestion control tuned for real-time media).
 
 - `moq` is the default branch: the latest upstream release tag plus our
   patches. `master` mirrors upstream master untouched.
-- The fork stays API-compatible with upstream: new capability is additive
-  (new methods, new feature flags), never a changed signature. Consumers pick
-  it up via `[patch.crates-io]`, so a crate built against crates-io quiche
-  builds against the fork unchanged.
+- New capability is additive by default: a new method or feature flag, so a
+  crate built against crates-io quiche keeps building against the fork through
+  `[patch.crates-io]`. Signature changes are the deliberate exception, taken
+  only where the shape itself is the feature and an additive twin would leave
+  the wrong one as the obvious call. Every such break is listed below, and
+  every in-tree consumer (`tokio-quiche`, `apps`, `h3i`) moves with it.
+- Deliberate breaks from upstream:
+  - **The connection owns no clock.** `recv`, `send`, `send_on_path`,
+    `timeout`, `on_timeout`, `migrate`, and `migrate_source` take a `now:
+    Instant` instead of reading `Instant::now()` internally. An event loop
+    that samples the clock once per turn can then hand the same instant to
+    every connection it drives, rather than paying a vDSO `clock_gettime` per
+    coalesced packet inside `recv`. This is what quinn-proto does, and it is
+    the difference between a sans-IO core and one that quietly does I/O. The C
+    ABI is unchanged: `quiche_conn_*` reads the clock at the boundary, since C
+    callers have no `Instant` to pass.
 - Rebase per upstream release, not continuously: a new upstream release
   triggers one rebase PR that moves `moq` onto the new tag.
 - Upstreaming is opportunistic: a feature that comes out clean is offered to

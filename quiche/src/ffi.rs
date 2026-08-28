@@ -37,6 +37,10 @@ use std::net::SocketAddrV6;
 #[cfg(unix)]
 use std::os::unix::io::FromRawFd;
 
+// The C ABI has no way to carry a Rust `Instant`, so the boundary reads the
+// clock and the Rust API stays the one that takes time from its caller.
+use std::time::Instant;
+
 use libc::c_char;
 use libc::c_int;
 use libc::c_void;
@@ -849,7 +853,7 @@ pub extern "C" fn quiche_conn_recv(
 
     let buf = unsafe { slice::from_raw_parts_mut(buf, buf_len) };
 
-    match conn.recv(buf, info.into()) {
+    match conn.recv(buf, info.into(), Instant::now()) {
         Ok(v) => v as ssize_t,
 
         Err(e) => e.to_c(),
@@ -876,7 +880,7 @@ pub extern "C" fn quiche_conn_send(
 
     let out = unsafe { slice::from_raw_parts_mut(out, out_len) };
 
-    match conn.send(out) {
+    match conn.send(out, Instant::now()) {
         Ok((v, info)) => {
             out_info.from_len = std_addr_to_c(&info.from, &mut out_info.from);
             out_info.to_len = std_addr_to_c(&info.to, &mut out_info.to);
@@ -904,7 +908,7 @@ pub extern "C" fn quiche_conn_send_on_path(
     let to = optional_std_addr_from_c(to, to_len);
     let out = unsafe { slice::from_raw_parts_mut(out, out_len) };
 
-    match conn.send_on_path(out, from, to) {
+    match conn.send_on_path(out, from, to, Instant::now()) {
         Ok((v, info)) => {
             out_info.from_len = std_addr_to_c(&info.from, &mut out_info.from);
             out_info.to_len = std_addr_to_c(&info.to, &mut out_info.to);
@@ -1090,7 +1094,7 @@ pub extern "C" fn quiche_conn_close(
 
 #[no_mangle]
 pub extern "C" fn quiche_conn_timeout_as_nanos(conn: &Connection) -> u64 {
-    match conn.timeout() {
+    match conn.timeout(Instant::now()) {
         Some(timeout) => timeout.as_nanos() as u64,
 
         None => u64::MAX,
@@ -1099,7 +1103,7 @@ pub extern "C" fn quiche_conn_timeout_as_nanos(conn: &Connection) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn quiche_conn_timeout_as_millis(conn: &Connection) -> u64 {
-    match conn.timeout() {
+    match conn.timeout(Instant::now()) {
         Some(timeout) => timeout.as_millis() as u64,
 
         None => u64::MAX,
@@ -1108,7 +1112,7 @@ pub extern "C" fn quiche_conn_timeout_as_millis(conn: &Connection) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn quiche_conn_on_timeout(conn: &mut Connection) {
-    conn.on_timeout()
+    conn.on_timeout(Instant::now())
 }
 
 #[no_mangle]
@@ -1795,7 +1799,7 @@ pub extern "C" fn quiche_conn_migrate_source(
     conn: &mut Connection, local: &sockaddr, local_len: socklen_t, seq: *mut u64,
 ) -> c_int {
     let local = std_addr_from_c(local, local_len);
-    match conn.migrate_source(local) {
+    match conn.migrate_source(local, Instant::now()) {
         Ok(v) => {
             unsafe { *seq = v }
             0
@@ -1811,7 +1815,7 @@ pub extern "C" fn quiche_conn_migrate(
 ) -> c_int {
     let local = std_addr_from_c(local, local_len);
     let peer = std_addr_from_c(peer, peer_len);
-    match conn.migrate(local, peer) {
+    match conn.migrate(local, peer, Instant::now()) {
         Ok(v) => {
             unsafe { *seq = v }
             0

@@ -24,6 +24,8 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+use std::time::Instant;
+
 use h3i::quiche;
 use std::net::SocketAddr;
 use tokio_quiche::quic::SimpleConnectionIdGenerator;
@@ -145,7 +147,7 @@ async fn run_migration_test(active: bool, base_port: u16) {
     let client_addr = if active {
         // We actively switch the connection to `migrated_addr` and report that
         // address for all packets we receive from now on.
-        conn.migrate_source(migrated_addr)
+        conn.migrate_source(migrated_addr, Instant::now())
             .expect("active migration should succeed");
         migrated_addr
     } else {
@@ -218,7 +220,9 @@ async fn process_flight(
         };
 
         // Process potentially coalesced packets.
-        let _ = conn.recv(&mut buf[..len], recv_info).unwrap();
+        let _ = conn
+            .recv(&mut buf[..len], recv_info, Instant::now())
+            .unwrap();
     }
 }
 

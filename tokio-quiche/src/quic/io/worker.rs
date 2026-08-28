@@ -320,7 +320,7 @@ where
                     // and hang connections.
                     //
                     // See https://docs.rs/tokio/latest/tokio/macro.select.html#fairness for more
-                    qconn.on_timeout();
+                    qconn.on_timeout(Instant::now());
 
                     self.write_state.next_release_time = None;
                     current_deadline = None;
@@ -577,7 +577,7 @@ where
         // apply to the whole GSO buffer.
         let (from, to) = self.select_path(qconn).unzip();
 
-        match qconn.send_on_path(send_buf, from, to) {
+        match qconn.send_on_path(send_buf, from, to, Instant::now()) {
             Ok((packet_size, info)) => {
                 let _ = send_info.get_or_insert(info);
 
@@ -685,10 +685,10 @@ where
 
         if let Some(gro) = pkt.gro {
             for dgram in pkt.buf.chunks_mut(gro as usize) {
-                qconn.recv(dgram, recv_info)?;
+                qconn.recv(dgram, recv_info, Instant::now())?;
             }
         } else {
-            qconn.recv(&mut pkt.buf, recv_info)?;
+            qconn.recv(&mut pkt.buf, recv_info, Instant::now())?;
         }
 
         Ok(())

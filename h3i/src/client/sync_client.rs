@@ -216,7 +216,9 @@ pub fn connect_with_early_data(
     let mut app_proto_selected = false;
 
     // Send ClientHello and initiate the handshake.
-    let (write, send_info) = conn.send(&mut out).expect("initial send failed");
+    let (write, send_info) = conn
+        .send(&mut out, Instant::now())
+        .expect("initial send failed");
 
     let mut client = SyncClient::new(close_trigger_frames);
     // Send early data if connection is_in_early_data (resumption with 0-RTT was
@@ -261,7 +263,7 @@ pub fn connect_with_early_data(
     let mut waiting_for = WaitingFor::default();
 
     loop {
-        let actual_sleep = match (wait_duration, conn.timeout()) {
+        let actual_sleep = match (wait_duration, conn.timeout(Instant::now())) {
             (Some(wait), Some(timeout)) => {
                 #[allow(clippy::comparison_chain)]
                 if timeout < wait {
@@ -290,7 +292,7 @@ pub fn connect_with_early_data(
         if events.is_empty() {
             log::debug!("timed out");
 
-            conn.on_timeout();
+            conn.on_timeout(Instant::now());
         }
 
         // Read incoming UDP packets from the socket and feed them to quiche,
@@ -326,14 +328,15 @@ pub fn connect_with_early_data(
                 };
 
                 // Process potentially coalesced packets.
-                let _read = match conn.recv(&mut buf[..len], recv_info) {
-                    Ok(v) => v,
+                let _read =
+                    match conn.recv(&mut buf[..len], recv_info, Instant::now()) {
+                        Ok(v) => v,
 
-                    Err(e) => {
-                        log::debug!("{local_addr}: recv failed: {e:?}");
-                        continue 'read;
-                    },
-                };
+                        Err(e) => {
+                            log::debug!("{local_addr}: recv failed: {e:?}");
+                            continue 'read;
+                        },
+                    };
             }
         }
 
@@ -436,6 +439,7 @@ pub fn connect_with_early_data(
                         &mut out,
                         Some(local_addr),
                         Some(peer_addr),
+                        Instant::now(),
                     ) {
                         Ok(v) => v,
 

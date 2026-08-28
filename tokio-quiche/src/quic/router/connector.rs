@@ -160,11 +160,11 @@ where
         if let Some(gro) = incoming.gro {
             for dgram in incoming.buf.chunks_mut(gro as usize) {
                 // Log error here if recv fails
-                let _ = conn.recv(dgram, recv_info);
+                let _ = conn.recv(dgram, recv_info, Instant::now());
             }
         } else {
             // Log error here if recv fails
-            let _ = conn.recv(&mut incoming.buf, recv_info);
+            let _ = conn.recv(&mut incoming.buf, recv_info, Instant::now());
         }
 
         // disarm the timer since we're either going to immediately rearm it or
@@ -210,7 +210,7 @@ where
             return Ok(());
         };
 
-        pending.conn.on_timeout();
+        pending.conn.on_timeout(Instant::now());
 
         if pending.conn.is_closed() {
             log::error!("pending connection closed on_timeout"; "scid" => ?scid);
@@ -271,7 +271,7 @@ fn simple_conn_send<Tx: DatagramSocketSend + Send + Sync + 'static>(
     loop {
         let scid = scid.clone();
         let mut buf = [0; MAX_DATAGRAM_SIZE];
-        let send_res = conn.send(&mut buf);
+        let send_res = conn.send(&mut buf, Instant::now());
 
         let socket_clone = socket_tx.clone();
         match send_res {

@@ -27,6 +27,8 @@
 #[macro_use]
 extern crate log;
 
+use std::time::Instant;
+
 use std::net;
 
 use std::collections::HashMap;
@@ -120,7 +122,10 @@ fn main() {
         // Find the shorter timeout from all the active connections.
         //
         // TODO: use event loop that properly supports timers
-        let timeout = clients.values().filter_map(|c| c.conn.timeout()).min();
+        let timeout = clients
+            .values()
+            .filter_map(|c| c.conn.timeout(Instant::now()))
+            .min();
 
         poll.poll(&mut events, timeout).unwrap();
 
@@ -133,7 +138,9 @@ fn main() {
             if events.is_empty() {
                 debug!("timed out");
 
-                clients.values_mut().for_each(|c| c.conn.on_timeout());
+                clients
+                    .values_mut()
+                    .for_each(|c| c.conn.on_timeout(Instant::now()));
 
                 break 'read;
             }
@@ -295,7 +302,8 @@ fn main() {
             };
 
             // Process potentially coalesced packets.
-            let read = match client.conn.recv(pkt_buf, recv_info) {
+            let read = match client.conn.recv(pkt_buf, recv_info, Instant::now())
+            {
                 Ok(v) => v,
 
                 Err(e) => {
@@ -399,7 +407,10 @@ fn main() {
         // packets to be sent.
         for client in clients.values_mut() {
             loop {
-                let (write, send_info) = match client.conn.send(&mut out) {
+                let (write, send_info) = match client
+                    .conn
+                    .send(&mut out, Instant::now())
+                {
                     Ok(v) => v,
 
                     Err(quiche::Error::Done) => {
