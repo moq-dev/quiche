@@ -462,6 +462,45 @@ fn handshake(#[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str) {
 }
 
 #[rstest]
+fn handshake_no_server_name(
+    #[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str,
+) {
+    let mut config = test_utils::Pipe::default_config(cc_algorithm_name).unwrap();
+
+    let mut client_scid = [0; 16];
+    rand::rand_bytes(&mut client_scid[..]);
+    let client_scid = ConnectionId::from_ref(&client_scid);
+
+    let mut server_scid = [0; 16];
+    rand::rand_bytes(&mut server_scid[..]);
+    let server_scid = ConnectionId::from_ref(&server_scid);
+
+    let mut pipe = test_utils::Pipe {
+        client: connect(
+            None,
+            &client_scid,
+            test_utils::Pipe::client_addr(),
+            test_utils::Pipe::server_addr(),
+            &mut config,
+        )
+        .unwrap(),
+        server: accept(
+            &server_scid,
+            None,
+            test_utils::Pipe::server_addr(),
+            test_utils::Pipe::client_addr(),
+            &mut config,
+        )
+        .unwrap(),
+    };
+
+    assert_eq!(pipe.handshake(), Ok(()));
+
+    // No server name reached the peer.
+    assert_eq!(pipe.server.server_name(), None);
+}
+
+#[rstest]
 fn handshake_done(
     #[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str,
 ) {
@@ -1209,6 +1248,14 @@ fn zero_rtt(#[values("cubic", "bbr2_gcongestion")] cc_algorithm_name: &str) {
     assert!(pipe.server.is_established());
     assert!(pipe.client.is_resumed());
     assert!(pipe.server.is_resumed());
+
+    // Early data is over: post-handshake stream data flows as 1-RTT.
+    assert!(!pipe.client.is_in_early_data());
+    assert_eq!(pipe.client.stream_send(8, b"post-handshake", true), Ok(14));
+    assert_eq!(pipe.advance(), Ok(()));
+    let mut b = [0; 15];
+    assert_eq!(pipe.server.stream_recv(8, &mut b), Ok((14, true)));
+    assert_eq!(&b[..14], b"post-handshake");
 }
 
 #[rstest]
