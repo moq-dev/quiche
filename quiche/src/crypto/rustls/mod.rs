@@ -24,6 +24,12 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#[cfg(all(feature = "rustls-aws-lc-rs", feature = "rustls-ring"))]
+compile_error!(
+    "rustls-aws-lc-rs and rustls-ring are mutually exclusive: pick one \
+     crypto provider"
+);
+
 #[cfg(feature = "rustls-aws-lc-rs")]
 mod aws_lc_rs {
     pub(super) use aws_lc_rs::aead::Aad;
@@ -142,6 +148,10 @@ impl Open {
     pub fn decrypt_hdr(
         &self, sample: &[u8], first: &mut u8, packet_number: &mut [u8],
     ) -> Result<()> {
+        if cfg!(feature = "fuzzing") {
+            return Ok(());
+        }
+
         self.header_protection_key
             .decrypt_in_place(sample, first, packet_number)
             .map_err(|e| {
@@ -153,6 +163,20 @@ impl Open {
     pub fn open_with_u64_counter(
         &self, packet_number: u64, header: &[u8], payload: &mut [u8],
     ) -> Result<usize> {
+        if cfg!(feature = "fuzzing") {
+            // Treat corpus bytes as plaintext, exactly like the BoringSSL
+            // backend, so mutated packets reach the frame parsers.
+            let tag_len = self.packet_key.tag_len();
+            let out_len = match payload.len().checked_sub(tag_len) {
+                Some(n) => n,
+                None => return Err(Error::CryptoFail),
+            };
+            if header.len() > tag_len && payload[out_len..] == header[..tag_len] {
+                return Err(Error::CryptoFail);
+            }
+            return Ok(out_len);
+        }
+
         let decrypted = self
             .packet_key
             .decrypt_in_place(packet_number, header, payload)
@@ -219,6 +243,10 @@ impl Seal {
     pub fn encrypt_hdr(
         &self, sample: &[u8], first: &mut u8, packet_number: &mut [u8],
     ) -> Result<()> {
+        if cfg!(feature = "fuzzing") {
+            return Ok(());
+        }
+
         self.header_protection_key
             .encrypt_in_place(sample, first, packet_number)
             .map_err(|e| {
@@ -234,6 +262,14 @@ impl Seal {
         if let Some(_extra_in) = extra_in {
             error!("extra_in is not supported when using rustls");
             return Err(Error::CryptoFail);
+        }
+
+        if cfg!(feature = "fuzzing") {
+            let tag_len = self.packet_key.tag_len();
+            if in_len + tag_len > buf.len() {
+                return Err(Error::CryptoFail);
+            }
+            return Ok(in_len + tag_len);
         }
 
         if (in_len + self.packet_key.tag_len()) > buf.len() {
@@ -451,13 +487,25 @@ fn quic_suite_from_algorithm(algo: Algorithm) -> Result<Suite> {
 }
 
 pub fn verify_slices_are_equal(a: &[u8], b: &[u8]) -> Result<()> {
+    // Callers compare secrets (stateless reset tokens), so the comparison
+    // must be constant-time, like the BoringSSL backend's CRYPTO_memcmp.
+    // Neither provider exposes a supported primitive (ring deprecated its
+    // constant_time module), so use the standard branchless XOR fold; the
+    // black_box keeps the accumulator from being optimized into an early
+    // exit.
     if a.len() != b.len() {
         return Err(Error::CryptoFail);
     }
 
-    match a == b {
-        true => Ok(()),
-        false => Err(Error::CryptoFail),
+    let acc = a
+        .iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b));
+
+    if std::hint::black_box(acc) == 0 {
+        Ok(())
+    } else {
+        Err(Error::CryptoFail)
     }
 }
 
